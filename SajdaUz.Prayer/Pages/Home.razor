@@ -1,7 +1,253 @@
 ﻿@page "/"
+@using SajdaUz.Prayer.Services
+@inject PrayerTimeService PrayerTimeService
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Namoz Vaqtlari</PageTitle>
 
-<h1>Hello, world!</h1>
+<div>
+    <div class="week-day-hijri">
+        <div>@todayWeekDay</div>
+        <div>@todayHijriMonthYear</div>
+    </div>
 
-Welcome to your new app.
+    <div class="prayer-times-container" style="margin-top: 60px;">
+        <div class="prayer-times-header">Namoz Vaqtlari</div>
+
+        @if (prayerTimes != null)
+        {
+            @foreach (var prayerTime in prayerTimesList)
+            {
+                <div class="prayer-time @(prayerTime.IsCurrentPrayer ? "highlight" : "")">
+                    <span>@prayerTime.Name</span>
+                    <span>@prayerTime.Time</span>
+                </div>
+            }
+
+            <div class="next-prayer-info">
+                <div>Keyingi namoz: <strong>@nextPrayerName</strong></div>
+                <div>Qolgan vaqt: <strong>@timeUntilNextPrayer</strong></div>
+            </div>
+        }
+
+        <div class="current-time">Hozirgi vaqt: @currentTime</div>
+    </div>
+
+</div>
+
+@code {
+    private PrayerTimes prayerTimes;
+    private string currentTime;
+    private List<PrayerTime> prayerTimesList = new List<PrayerTime>();
+    private string todayWeekDay;
+    private string todayHijriMonthYear;
+
+    private string nextPrayerName;
+    private string timeUntilNextPrayer;
+    private DateTime? nextPrayerTime;
+
+    protected override async Task OnInitializedAsync()
+    {
+        prayerTimes = await PrayerTimeService.GetPrayerTimesByCoordinatesAsync(41.311081, 69.240562);
+        UpdateCurrentTime();
+        GeneratePrayerTimesList();
+        GetWeekDayAndHijriDate();
+    }
+
+    private void GeneratePrayerTimesList()
+    {
+        prayerTimesList = new List<PrayerTime>
+        {
+            new PrayerTime { Name = "Bomdod", Time = prayerTimes.Fajr, IsCurrentPrayer = false },
+            new PrayerTime { Name = "Quyosh", Time = prayerTimes.Sunrise, IsCurrentPrayer = false },
+            new PrayerTime { Name = "Peshin", Time = prayerTimes.Dhuhr, IsCurrentPrayer = false },
+            new PrayerTime { Name = "Asr", Time = prayerTimes.Asr, IsCurrentPrayer = false },
+            new PrayerTime { Name = "Shom", Time = prayerTimes.Maghrib, IsCurrentPrayer = false },
+            new PrayerTime { Name = "Hufton", Time = prayerTimes.Isha, IsCurrentPrayer = false }
+        };
+
+        var currentTime = DateTime.Now;
+
+        for (int i = 0; i < prayerTimesList.Count; i++)
+        {
+            var prayerStartTime = DateTime.Parse(prayerTimesList[i].Time);
+            DateTime? nextPrayerTime = i + 1 < prayerTimesList.Count
+                ? DateTime.Parse(prayerTimesList[i + 1].Time)
+                : (DateTime?)null;
+
+            if (currentTime >= prayerStartTime && (nextPrayerTime == null || currentTime < nextPrayerTime))
+            {
+                prayerTimesList[i].IsCurrentPrayer = true;
+
+                if (i + 1 < prayerTimesList.Count)
+                {
+                    this.nextPrayerTime = DateTime.Parse(prayerTimesList[i + 1].Time);
+                    nextPrayerName = prayerTimesList[i + 1].Name;
+                    timeUntilNextPrayer = GetTimeUntilNextPrayer(nextPrayerTime.Value);
+                }
+                break;
+            }
+        }
+    }
+
+    private string GetTimeUntilNextPrayer(DateTime nextPrayerTime)
+    {
+        var timeDifference = nextPrayerTime - DateTime.Now;
+
+        if (timeDifference.TotalSeconds <= 0)
+            return "00:00:00";
+
+        return $"{timeDifference.Hours:D2}:{timeDifference.Minutes:D2}:{timeDifference.Seconds:D2}";
+    }
+
+    private void UpdateCurrentTime()
+    {
+        currentTime = DateTime.Now.ToString("HH:mm");
+        StateHasChanged();
+
+        if (nextPrayerTime.HasValue)
+        {
+            timeUntilNextPrayer = GetTimeUntilNextPrayer(nextPrayerTime.Value);
+        }
+
+        Task.Delay(1000).ContinueWith(t =>
+        {
+            UpdateCurrentTime();
+            if (nextPrayerTime.HasValue)
+            {
+                timeUntilNextPrayer = GetTimeUntilNextPrayer(nextPrayerTime.Value);
+                StateHasChanged(); 
+            }
+        });
+    }
+
+    private async void GetWeekDayAndHijriDate()
+    {
+        var weekdaysUzbek = new[] { "Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba" };
+        var monthsUzbek = new[] { "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr" };
+
+        var today = DateTime.Now;
+        todayWeekDay = weekdaysUzbek[(int)today.DayOfWeek] + "  " + today.Day + "  " + monthsUzbek[today.Month - 1] + ", " + today.Year;
+
+        var hijriMonthNames = new[]
+        {
+            "Muharram", "Safar", "Rabi' al-awwal", "Rabi' al-thani", "Jumada al-awwal", "Jumada al-thani", "Rajab", "Sha'ban", "Ramazon",
+            "Shawwal", "Dhul-Qi'dah", "Dhul-Hijjah"
+        };
+
+        var hijri = await PrayerTimeService.GetHijriDateByCoordinatesAsync(41.311081, 69.240562);
+        todayHijriMonthYear = $"{hijri.Day}  {hijri.Month}, {hijri.Year}";
+    }
+
+    public class PrayerTime
+    {
+        public string Name { get; set; }
+        public string Time { get; set; }
+        public bool IsCurrentPrayer { get; set; }
+    }
+}
+
+
+
+<style>
+    body {
+        background-image: url('pexels-konevi-2291789.jpg');
+        background-size: cover;
+        background-position: center;
+        height: 100vh;
+        margin: 0;
+        font-family: Arial, sans-serif;
+    }
+
+    /* Weekday and Hijri Date at the top-left */
+    .week-day-hijri {
+        position: absolute;
+        top: 70px; /* Move it down slightly to avoid the app bar */
+        left: 20px; /* Position at the left */
+        color: white; /* White color for visibility */
+        font-size: 14px;
+        background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+        padding: 5px 10px; /* Add some padding for better readability */
+        border-radius: 5px; /* Rounded corners */
+        text-shadow: 0 0 6px rgba(255, 255, 255, 0.7); /* Soft glow effect */
+    }
+
+    .prayer-times-container {
+        width: 400px; /* Default width for desktop */
+        margin: 0 auto;
+        padding: 30px;
+        background-color: rgba(0, 0, 0, 0.95); /* Slightly darker black with transparency */
+        border-radius: 15px; /* Rounded corners */
+        color: white;
+        text-align: center; /* Center content inside the box */
+        position: absolute;
+        top: 50%; /* Vertically center */
+        left: 50%; /* Horizontally center */
+        transform: translate(-50%, -50%); /* Adjust centering */
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.7); /* Add a shadow for better visibility */
+        margin-top: 60px; /* Headerdan bo'sh joy qoldirish */
+    }
+
+    .prayer-times-header {
+        margin-bottom: 20px;
+        font-size: 24px; /* Larger font size */
+        font-weight: bold;
+        text-shadow: 0 0 8px rgba(255, 255, 255, 0.7); /* Add a soft glow to the text */
+    }
+
+    .prayer-time {
+        display: flex;
+        justify-content: space-between;
+        margin: 15px 0;
+        font-size: 18px; /* Larger font size */
+        text-shadow: 0 0 6px rgba(255, 255, 255, 0.5); /* Add glow for visibility */
+    }
+
+    .highlight {
+        color: #00ff00; /* Green color for the highlighted item */
+        font-weight: bold;
+    }
+
+    .next-prayer-info {
+        background-color: rgba(0, 128, 0, 0.8);
+        color: white;
+        padding: 10px;
+        margin-bottom: 20px;
+        border-radius: 10px;
+        font-size: 18px;
+        text-align: center;
+    }
+
+    .current-time {
+        text-align: center;
+        margin-top: 20px;
+        font-size: 16px;
+        color: #cccccc;
+    }
+
+    /* Responsive Design for Mobile */
+    media (max-width: 600px) {
+        .prayer-times-container
+
+    {
+        width: 90%;
+        padding: 15px;
+    }
+
+    .prayer-time {
+        font-size: 16px; /* Adjust text size */
+    }
+
+    .current-time {
+        font-size: 12px; /* Smaller font for current time */
+    }
+
+    .week-day-hijri {
+        font-size: 12px; /* Smaller font size for mobile */
+    }
+
+    }
+</style>
+
+
+
+        

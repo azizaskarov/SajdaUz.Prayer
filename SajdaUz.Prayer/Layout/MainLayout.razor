@@ -4,26 +4,21 @@
 <MudThemeProvider @bind-IsDarkMode="@isDarkMode" Theme="Theme.SpacesTheme()" />
 
 <MudAppBar Color="Color.Primary" Fixed="false">
-    <MudIconButton Icon="fas fa-mosque" Color="Color.Success" />
-
-    <MudText Typo="Typo.h6" Class="ml-3">
+    <MudText Typo="Typo.h6">
         Namoz Vaqtlari
     </MudText>
-    <MudButton Variant="Variant.Filled" EndIcon="@Icons.Material.Filled.ArrowDownward" Style="background-color: yellowgreen; color: white; width: 200px; height: 60px;">
-        Viloyatlar bo'yicha
-    </MudButton>
 
     <MudSpacer />
     <MudToggleIconButton @bind-Toggled="@isDarkMode" Icon="@Icons.Material.Filled.LightMode" Color="Color.Inherit"
                          ToggledIcon="@Icons.Material.Filled.DarkMode" ToggledColor="Color.Inherit" />
     <MudIconButton Icon="@Icons.Custom.Brands.GitHub" Color="Color.Inherit" />
 </MudAppBar>
-<MudContainer>
+
+<!-- Adjust MudContainer to respect the space taken by MudAppBar -->
+<MudContainer Style="margin-top: 100px;">  <!-- Assuming the height of the MudAppBar is 64px -->
     @Body
 </MudContainer>
 
-
 @code {
-
     private bool isDarkMode = true;
 }
