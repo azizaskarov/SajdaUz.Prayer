@@ -23,15 +23,14 @@
                 </div>
             }
 
-            <div class="next-prayer-info">
-                <div>Keyingi namoz: <strong>@nextPrayerName</strong></div>
-                <div>Qolgan vaqt: <strong>@timeUntilNextPrayer</strong></div>
+            <div class="prayer-time next-prayer-info">
+                <span>@nextPrayerName</span>
+                <span>@timeUntilNextPrayer</span>
             </div>
         }
 
         <div class="current-time">Hozirgi vaqt: @currentTime</div>
     </div>
-
 </div>
 
 @code {
@@ -47,8 +46,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadPrayerTimesAsync();
+        StartRealTimeUpdates();
+    }
+
+    private async Task LoadPrayerTimesAsync()
+    {
         prayerTimes = await PrayerTimeService.GetPrayerTimesByCoordinatesAsync(41.311081, 69.240562);
-        UpdateCurrentTime();
         GeneratePrayerTimesList();
         GetWeekDayAndHijriDate();
     }
@@ -57,65 +61,61 @@
     {
         prayerTimesList = new List<PrayerTime>
         {
-            new PrayerTime { Name = "Bomdod", Time = prayerTimes.Fajr, IsCurrentPrayer = false },
-            new PrayerTime { Name = "Quyosh", Time = prayerTimes.Sunrise, IsCurrentPrayer = false },
-            new PrayerTime { Name = "Peshin", Time = prayerTimes.Dhuhr, IsCurrentPrayer = false },
-            new PrayerTime { Name = "Asr", Time = prayerTimes.Asr, IsCurrentPrayer = false },
-            new PrayerTime { Name = "Shom", Time = prayerTimes.Maghrib, IsCurrentPrayer = false },
-            new PrayerTime { Name = "Hufton", Time = prayerTimes.Isha, IsCurrentPrayer = false }
+            new PrayerTime { Name = "Bomdod", Time = prayerTimes.Fajr },
+            new PrayerTime { Name = "Quyosh", Time = prayerTimes.Sunrise },
+            new PrayerTime { Name = "Peshin", Time = prayerTimes.Dhuhr },
+            new PrayerTime { Name = "Asr", Time = prayerTimes.Asr },
+            new PrayerTime { Name = "Shom", Time = prayerTimes.Maghrib },
+            new PrayerTime { Name = "Hufton", Time = prayerTimes.Isha }
         };
+        UpdateCurrentPrayer();
+    }
 
-        var currentTime = DateTime.Now;
+    private void UpdateCurrentPrayer()
+    {
+        var now = DateTime.Now;
+        nextPrayerTime = null;
+        nextPrayerName = "";
 
         for (int i = 0; i < prayerTimesList.Count; i++)
         {
-            var prayerStartTime = DateTime.Parse(prayerTimesList[i].Time);
-            DateTime? nextPrayerTime = i + 1 < prayerTimesList.Count
-                ? DateTime.Parse(prayerTimesList[i + 1].Time)
-                : (DateTime?)null;
+            var startTime = DateTime.Parse(prayerTimesList[i].Time);
+            DateTime? nextTime = i + 1 < prayerTimesList.Count ? DateTime.Parse(prayerTimesList[i + 1].Time) : (DateTime?)null;
 
-            if (currentTime >= prayerStartTime && (nextPrayerTime == null || currentTime < nextPrayerTime))
+            prayerTimesList[i].IsCurrentPrayer = now >= startTime && (nextTime == null || now < nextTime);
+
+            if (now < startTime && nextPrayerTime == null)
             {
-                prayerTimesList[i].IsCurrentPrayer = true;
-
-                if (i + 1 < prayerTimesList.Count)
-                {
-                    this.nextPrayerTime = DateTime.Parse(prayerTimesList[i + 1].Time);
-                    nextPrayerName = prayerTimesList[i + 1].Name;
-                    timeUntilNextPrayer = GetTimeUntilNextPrayer(nextPrayerTime.Value);
-                }
-                break;
+                nextPrayerTime = startTime;
+                nextPrayerName = prayerTimesList[i].Name;
             }
         }
-    }
 
-    private string GetTimeUntilNextPrayer(DateTime nextPrayerTime)
-    {
-        var timeDifference = nextPrayerTime - DateTime.Now;
-
-        if (timeDifference.TotalSeconds <= 0)
-            return "00:00:00";
-
-        return $"{timeDifference.Hours:D2}:{timeDifference.Minutes:D2}:{timeDifference.Seconds:D2}";
-    }
-
-    private void UpdateCurrentTime()
-    {
-        currentTime = DateTime.Now.ToString("HH:mm");
-        StateHasChanged();
-
-        if (nextPrayerTime.HasValue)
+        if (nextPrayerTime == null)
         {
-            timeUntilNextPrayer = GetTimeUntilNextPrayer(nextPrayerTime.Value);
+            nextPrayerTime = DateTime.Parse(prayerTimesList[0].Time).AddDays(1);
+            nextPrayerName = prayerTimesList[0].Name;
         }
 
-        Task.Delay(1000).ContinueWith(t =>
+        timeUntilNextPrayer = GetTimeUntilNextPrayer(nextPrayerTime.Value);
+    }
+
+    private string GetTimeUntilNextPrayer(DateTime nextTime)
+    {
+        var diff = nextTime - DateTime.Now;
+        return diff.TotalSeconds <= 0 ? "00:00:00" : $"{diff.Hours:D2}:{diff.Minutes:D2}:{diff.Seconds:D2}";
+    }
+
+    private void StartRealTimeUpdates()
+    {
+        _ = Task.Run(async () =>
         {
-            UpdateCurrentTime();
-            if (nextPrayerTime.HasValue)
+            while (true)
             {
-                timeUntilNextPrayer = GetTimeUntilNextPrayer(nextPrayerTime.Value);
-                StateHasChanged(); 
+                currentTime = DateTime.Now.ToString("HH:mm:ss");
+                UpdateCurrentPrayer();
+                InvokeAsync(StateHasChanged);
+                await Task.Delay(1000);
             }
         });
     }
@@ -126,16 +126,10 @@
         var monthsUzbek = new[] { "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr" };
 
         var today = DateTime.Now;
-        todayWeekDay = weekdaysUzbek[(int)today.DayOfWeek] + "  " + today.Day + "  " + monthsUzbek[today.Month - 1] + ", " + today.Year;
-
-        var hijriMonthNames = new[]
-        {
-            "Muharram", "Safar", "Rabi' al-awwal", "Rabi' al-thani", "Jumada al-awwal", "Jumada al-thani", "Rajab", "Sha'ban", "Ramazon",
-            "Shawwal", "Dhul-Qi'dah", "Dhul-Hijjah"
-        };
+        todayWeekDay = weekdaysUzbek[(int)today.DayOfWeek] + ", " + today.Day + " " + monthsUzbek[today.Month - 1] + ", " + today.Year;
 
         var hijri = await PrayerTimeService.GetHijriDateByCoordinatesAsync(41.311081, 69.240562);
-        todayHijriMonthYear = $"{hijri.Day}  {hijri.Month}, {hijri.Year}";
+        todayHijriMonthYear = $"{hijri.Day} {hijri.Month}, {hijri.Year}";
     }
 
     public class PrayerTime
@@ -145,7 +139,6 @@
         public bool IsCurrentPrayer { get; set; }
     }
 }
-
 
 
 <style>
